@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AV Fleet Safety Metrics</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.5.0/echarts.min.js"></script>
+<style>
+:root{--bg:#f7f7f5;--card:#fff;--ink:#1d1d1f;--muted:#6b6b70;--line:#e4e4e0;--accent:#2f5bd3;--accent2:#d9822b;--good:#2e8b57;--grey:#9a9aa0;--bad:#c2410c}
+@media (prefers-color-scheme:dark){:root{--bg:#141416;--card:#1d1d20;--ink:#ececec;--muted:#9b9ba1;--line:#2e2e33;--accent:#7b9cff;--accent2:#f0a055;--good:#5cc08a;--grey:#76767c;--bad:#fb923c}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif}
+main{max-width:1120px;margin:0 auto;padding:28px 16px 60px}
+h1{font-size:26px;margin:0 0 4px}
+h2{font-size:17px;margin:0 0 4px}
+.sub{color:var(--muted);margin:0 0 22px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:16px}
+.kpi,.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+.kpi b{display:block;font-size:24px;letter-spacing:-.01em}
+.kpi span{color:var(--muted);font-size:13px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:820px){.grid{grid-template-columns:1fr}}
+.card p.note{color:var(--muted);font-size:13px;margin:2px 0 10px}
+.chart{height:340px;width:100%}
+.answer{border-left:4px solid var(--accent);background:var(--card);padding:14px 18px;border-radius:8px;margin:0 0 16px}
+.answer ul{margin:6px 0 0;padding-left:18px}
+.ctl{display:flex;gap:8px;margin:6px 0 4px;flex-wrap:wrap}
+.ctl button{border:1px solid var(--line);background:transparent;color:var(--ink);padding:4px 10px;border-radius:999px;cursor:pointer;font:inherit;font-size:13px}
+.ctl button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--muted);font-weight:600}
+td.flag{color:var(--bad);font-weight:600}
+.tablewrap{overflow-x:auto;max-width:100%}
+.card,.grid>*{min-width:0}
+body{overflow-x:hidden}
+.method{font-size:13.5px;color:var(--muted)}
+.method li{margin-bottom:4px}
+a{color:var(--accent)}
+</style>
+</head>
+<body>
+<main>
+  <h1>Measuring autonomous driving performance from California's public filings</h1>
+  <p class="sub">Every company testing self driving cars in California files its disengagements, mileage and collisions with the DMV. This page turns the 2021 to 2025 filings into fleet metrics with honest uncertainty, labels why each disengagement happened, and flags when a trend is really a change in how a company reports. <a href="https://github.com/satwik-kotta/av-fleet-safety-metrics">Code and method</a> · <a href="memo.html">One page memo</a></p>
+
+  <div class="answer" id="answer"></div>
+  <div class="kpis" id="kpis"></div>
+
+  <div class="card">
+    <h2>Miles per disengagement, with 95% intervals</h2>
+    <p class="note">Company years with at least 100,000 autonomous miles. Log scale. The whiskers are exact Poisson intervals, so a year with few events shows how little it can prove.</p>
+    <div class="ctl" id="cos"></div>
+    <div class="chart" id="mpd" style="height:360px"></div>
+  </div>
+
+  <div class="grid" style="margin-top:16px">
+    <div class="card">
+      <h2>Why disengagements happen</h2>
+      <p class="note">Share of each company's disengagements by the part of the stack (or the outside world) named as the cause, from rules on the free text.</p>
+      <div class="chart" id="causes"></div>
+    </div>
+    <div class="card">
+      <h2>How good is a cause classifier, really?</h2>
+      <p class="note">Same model, two evaluations. A random split of events leaks identical boilerplate sentences into the test set. Holding out whole companies does not.</p>
+      <div class="chart" id="eval"></div>
+    </div>
+    <div class="card">
+      <h2>Collisions: autonomous vs conventional mode</h2>
+      <p class="note">Share of DMV collision reports by collision type, 2014 to 2024, for the same test vehicles in each mode.</p>
+      <div class="chart" id="col"></div>
+    </div>
+    <div class="card">
+      <h2>Zoox disengagements by driving situation</h2>
+      <p class="note">Share of Zoox's disengagements (2021 to 2025) whose cause text mentions each situation. One event can mention several.</p>
+      <div class="chart" id="zoox"></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h2>Drift monitor on the filings</h2>
+    <p class="note">For each company, how much the cause mix moved from one year to the next (PSI) and how many of the year's cause sentences were new wording. A large shift with mostly new wording is a reporting change, not a driving change.</p>
+    <div class="tablewrap"><table id="drift"></table></div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h2>How the numbers were built</h2>
+    <ul class="method" id="method"></ul>
+  </div>
+</main>
+<script>
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const $=id=>document.getElementById(id);
+const pct=(v,d=0)=>(v*100).toFixed(d)+'%';
+const k=v=>v==null?'n/a':v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?Math.round(v/1e3)+'K':Math.round(v);
+const base=()=>({textStyle:{color:css('--ink'),fontFamily:'inherit'},grid:{left:56,right:16,top:36,bottom:40}});
+const axis=()=>({axisLine:{lineStyle:{color:css('--line')}},axisLabel:{color:css('--muted')},splitLine:{lineStyle:{color:css('--line')}}});
+const legend=()=>({top:0,textStyle:{color:css('--muted')},type:'scroll'});
+
+fetch('data/results.json').then(r=>r.json()).then(d=>{
+  const M=d.mpd.filter(r=>r.comparable), Z=M.filter(r=>r.company==='Zoox'), z23=Z.find(r=>r.year===2023), z25=Z.find(r=>r.year===2025);
+  const W=Object.fromEntries(d.mpd.filter(r=>r.company==='Waymo').map(r=>[r.year,r]));
+  const wy=d.year_over_year.find(r=>r.company==='Waymo'&&r.to===2024), wd=d.drift.find(r=>r.company==='Waymo'&&r.to===2024);
+  const C=d.collisions, mod=d.model;
+
+  $('answer').innerHTML=`<b>What a V&V team should take from this</b><ul>
+   <li>Report miles per disengagement with an interval. Zoox's 2023 figure of ${k(z23.mpd)} rests on ${z23.disengagements} events, and its 95% interval runs from ${k(z23.mpd_low)} to ${k(z23.mpd_high)}. Its 2025 figure (${k(z25.mpd)}, ${z25.disengagements} events) is far more certain.</li>
+   <li>Check whether a trend is real before explaining it. Waymo's rate rose ${wy.rate_ratio.toFixed(2)}x in 2024 (p < 0.001) with no change in how it worded causes, so the shift toward planning causes (+${Math.round(wd.biggest_shift_points*100)} points) looks like a real change in driving. Several other jumps were new wording.</li>
+   <li>Evaluate on data the model has not seen. A cause classifier scored ${mod.naive_random_split_macro_f1.toFixed(3)} macro F1 on a random split because ${pct(mod.naive_test_sentences_seen_in_training)} of test sentences were already in training. On companies it never saw, it scored ${mod.held_out_company_macro_f1.toFixed(2)}.</li>
+   <li>In autonomous mode, ${pct(C.autonomous_rear_end_share)} of collisions were rear end crashes and the test vehicle was at fault in ${pct(C.autonomous_av_at_fault_share)}, against ${pct(C.type.share.Conventional['Rear end'])} and ${pct(C.conventional_av_at_fault_share)} in conventional mode (chi-square p < 0.001).</li></ul>`;
+
+  $('kpis').innerHTML=[
+    [d.integrity.events.toLocaleString(),'disengagement reports, 2021 to 2025'],
+    [d.integrity.companies,`companies, from ${d.integrity.raw_company_spellings} spellings in the raw filings`],
+    [d.reconciliation.mismatched_company_years+' of '+d.reconciliation.company_years,'company years where event rows and mileage totals disagree after cleaning'],
+    [pct(d.labels.top10_sentences_share_of_events),'of all events use one of just ten boilerplate sentences']
+  ].map(([a,b])=>`<div class="kpi"><b>${a}</b><span>${b}</span></div>`).join('');
+
+  // MPD chart with company toggles
+  const companies=[...new Set(M.map(r=>r.company))], pal=[css('--accent'),css('--accent2'),css('--good'),'#8b5cf6','#db2777','#0891b2',css('--grey')];
+  let on=new Set(['Zoox','Waymo','Cruise']);
+  const mc=echarts.init($('mpd'));
+  const years=[2021,2022,2023,2024,2025];
+  const draw=()=>{const ser=[];companies.forEach((c,i)=>{if(!on.has(c))return;const rows=M.filter(r=>r.company===c),col=pal[i%pal.length];
+      ser.push({name:c,type:'line',data:years.map(y=>{const r=rows.find(x=>x.year===y);return r&&r.mpd?r.mpd:null}),itemStyle:{color:col},lineStyle:{width:2.5},symbolSize:8,connectNulls:false});
+      ser.push({name:c,type:'custom',renderItem:(p,api)=>{const x=api.coord([api.value(0),1])[0],lo=api.coord([0,api.value(1)])[1],hi=api.coord([0,api.value(2)])[1];
+        return{type:'group',children:[{type:'line',shape:{x1:x,y1:lo,x2:x,y2:hi},style:{stroke:col,lineWidth:1.5,opacity:.7}},{type:'line',shape:{x1:x-5,y1:lo,x2:x+5,y2:lo},style:{stroke:col}},{type:'line',shape:{x1:x-5,y1:hi,x2:x+5,y2:hi},style:{stroke:col}}]}},
+        data:rows.filter(r=>r.mpd).map(r=>[years.indexOf(r.year),r.mpd_low,r.mpd_high||r.mpd_low]),tooltip:{show:false},z:1});});
+    mc.setOption({...base(),grid:{left:64,right:16,top:20,bottom:40},tooltip:{trigger:'axis',formatter:ps=>ps.filter(p=>p.seriesType==='line'&&p.value!=null).map(p=>{const r=M.find(x=>x.company===p.seriesName&&x.year===+p.name);return `${p.marker}${p.seriesName} ${p.name}: ${k(r.mpd)} miles (${r.disengagements} events, ${k(r.mpd_low)} to ${k(r.mpd_high)})`}).join('<br>')},
+      xAxis:{type:'category',data:years.map(String),...axis()},yAxis:{type:'log',min:10,...axis(),axisLabel:{color:css('--muted'),formatter:k}},series:ser},true);};
+  $('cos').innerHTML=companies.map(c=>`<button data-c="${c}" class="${on.has(c)?'on':''}">${c}</button>`).join('');
+  $('cos').onclick=e=>{const c=e.target.dataset.c;if(!c)return;on.has(c)?on.delete(c):on.add(c);e.target.classList.toggle('on');draw();};
+  draw();
+
+  const cats=['Perception','Prediction','Planning','Map and localization','Hardware','Software and system fault','Other road users and conditions','Unclear'];
+  const cc=[css('--accent'),'#8b5cf6',css('--accent2'),'#0891b2','#db2777',css('--bad'),css('--good'),css('--grey')];
+  const comps=Object.keys(d.labels.by_company);
+  echarts.init($('causes')).setOption({...base(),grid:{left:70,right:10,top:56,bottom:30},legend:{...legend(),top:0},tooltip:{trigger:'axis',axisPointer:{type:'shadow'},valueFormatter:v=>pct(v)},
+    yAxis:{type:'category',data:comps,...axis()},xAxis:{type:'value',max:1,...axis(),axisLabel:{color:css('--muted'),formatter:v=>pct(v)}},
+    series:cats.map((c,i)=>({name:c,type:'bar',stack:'s',data:comps.map(x=>d.labels.by_company[x][c]||0),itemStyle:{color:cc[i]}}))});
+
+  const pc=mod.held_out_company_f1_by_class;
+  echarts.init($('eval')).setOption({...base(),grid:{left:150,right:44,top:20,bottom:30},tooltip:{trigger:'axis',axisPointer:{type:'shadow'},valueFormatter:v=>v.toFixed(2)},
+    yAxis:{type:'category',inverse:true,data:['Random split (leaky)','Held out companies',...Object.keys(pc).map(c=>'  '+c)],...axis()},
+    xAxis:{type:'value',max:1,...axis()},
+    series:[{type:'bar',data:[{value:mod.naive_random_split_macro_f1,itemStyle:{color:css('--grey')}},{value:mod.held_out_company_macro_f1,itemStyle:{color:css('--accent')}},...Object.values(pc).map(v=>({value:v,itemStyle:{color:css('--accent'),opacity:.55}}))],
+      label:{show:true,position:'right',formatter:p=>p.value.toFixed(2),color:css('--muted')}}]});
+
+  const types=Object.keys(C.type.share.Autonomous);
+  echarts.init($('col')).setOption({...base(),legend:legend(),tooltip:{trigger:'axis',valueFormatter:v=>pct(v,1)},
+    xAxis:{type:'category',data:types,...axis(),axisLabel:{color:css('--muted'),interval:0,fontSize:11}},yAxis:{type:'value',...axis(),axisLabel:{color:css('--muted'),formatter:v=>pct(v)}},
+    series:[{name:'Autonomous mode',type:'bar',data:types.map(t=>C.type.share.Autonomous[t]),itemStyle:{color:css('--accent'),borderRadius:[3,3,0,0]}},
+            {name:'Conventional mode',type:'bar',data:types.map(t=>C.type.share.Conventional[t]),itemStyle:{color:css('--grey'),borderRadius:[3,3,0,0]}}]});
+
+  const zs=Object.entries(d.behaviors.zoox_share);
+  echarts.init($('zoox')).setOption({...base(),grid:{left:170,right:30,top:10,bottom:30},tooltip:{valueFormatter:v=>pct(v)},
+    yAxis:{type:'category',inverse:true,data:zs.map(x=>x[0]),...axis()},xAxis:{type:'value',...axis(),axisLabel:{color:css('--muted'),formatter:v=>pct(v)}},
+    series:[{type:'bar',data:zs.map(x=>x[1]),itemStyle:{color:css('--accent'),borderRadius:[0,3,3,0]},label:{show:true,position:'right',formatter:p=>pct(p.value),color:css('--muted')}}]});
+
+  const dr=d.drift.slice(0,12);
+  $('drift').innerHTML='<tr><th>Company</th><th>Years</th><th>Events</th><th>PSI</th><th>New wording</th><th>Biggest shift</th><th>Read as</th></tr>'+
+    dr.map(r=>`<tr><td>${r.company}</td><td>${r.from} to ${r.to}</td><td>${r.events_from} to ${r.events_to}</td><td class="${r.alert?'flag':''}">${r.psi.toFixed(2)}</td><td>${pct(r.template_novelty)}</td><td>${r.biggest_shift} ${r.biggest_shift_points>0?'+':''}${Math.round(r.biggest_shift_points*100)} pts</td><td>${r.likely_reporting_change?'Reporting change':r.alert?'Real shift, check it':'Stable'}</td></tr>`).join('');
+
+  const I=d.integrity,S=d.similarity;
+  $('method').innerHTML=[
+    `Data: the DMV's 2021 to 2025 disengagement reports (${I.events.toLocaleString()} events) and vehicle mileage reports (${I.vehicle_years.toLocaleString()} vehicle years), plus ${C.reports} collision reports (form OL 316). Company names arrive in ${I.raw_company_spellings} spellings, who started the disengagement in ${I.raw_initiator_spellings} and road type in ${I.raw_location_spellings}. All were mapped to one value each. One company's dates came as numbers like 20230308, ${I.annual_totals_filled_from_months} blank annual mileage totals were rebuilt from the monthly columns, and after cleaning every company year's event count matches the mileage file exactly.`,
+    `Miles per disengagement uses each company year's total autonomous miles and disengagements. Intervals are exact (Garwood) Poisson intervals. Year over year changes use an exact conditional binomial test.`,
+    `Cause labels come from readable rules on the free text. A clause after "root cause", "caused by" or "due to" decides. Otherwise the first category named wins, and consequence clauses ("which resulted in a motion plan...") are ignored. ${pct(d.labels.event_share_mixed)} of events name more than one category, which is the label noise the classifier has to live with.`,
+    `Classifier: TF-IDF and logistic regression trained on the ${mod.labelled_sentences} distinct sentences with a single clear rule label. The held out score uses five folds that never put a company in both training and test.`,
+    `Similarity search: each sentence is embedded (TF-IDF reduced to ${S.dims} dimensions with SVD) and indexed in FAISS. Among the 5 nearest sentences written by other companies, ${pct(S.precision_at_k)} share its cause label, against ${pct(S.chance)} by chance.`,
+    `Limits: companies decide what counts as a disengagement and how to describe it, so cross company comparisons are rough. Driverless operations are reported under a different permit and are not in this data. Collision reports run only to mid 2024 and do not include mileage in each mode, so they compare crash types, not crash rates.`
+  ].map(x=>`<li>${x}</li>`).join('');
+
+  addEventListener('resize',()=>document.querySelectorAll('.chart').forEach(el=>echarts.getInstanceByDom(el)?.resize()));
+});
+</script>
+</body>
+</html>

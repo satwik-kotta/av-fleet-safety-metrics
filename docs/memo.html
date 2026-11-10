@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AV Metrics Memo</title>
+<style>
+:root{--bg:#fff;--ink:#1d1d1f;--muted:#5f5f66;--accent:#2f5bd3}
+@media (prefers-color-scheme:dark){:root{--bg:#141416;--ink:#ececec;--muted:#a0a0a6;--accent:#7b9cff}}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 Georgia,"Times New Roman",serif}
+main{max-width:760px;margin:0 auto;padding:32px 16px 60px}
+h1{font:600 22px/1.3 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0 0 4px}
+h2{font:600 15px/1.3 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:22px 0 6px;text-transform:uppercase;letter-spacing:.04em;color:var(--accent)}
+.meta{color:var(--muted);font:13px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin-bottom:18px}
+a{color:var(--accent)}
+</style>
+</head>
+<body>
+<main>
+<h1>Memo. What California's public AV filings can and cannot tell a V&V team</h1>
+<div class="meta">Satwik Kotta · California DMV disengagement, mileage and collision filings · <a href="index.html">Dashboard</a> · <a href="https://github.com/satwik-kotta/av-fleet-safety-metrics">Code</a></div>
+<div id="memo">Loading…</div>
+</main>
+<script>
+const pct=(v,d=0)=>(v*100).toFixed(d)+'%';
+const k=v=>v==null?'n/a':v>=1e3?Math.round(v/1e3)+'K':Math.round(v);
+fetch('data/results.json').then(r=>r.json()).then(d=>{
+  const Z=Object.fromEntries(d.mpd.filter(r=>r.company==='Zoox').map(r=>[r.year,r]));
+  const wy=d.year_over_year.find(r=>r.company==='Waymo'&&r.to===2024), wd=d.drift.find(r=>r.company==='Waymo'&&r.to===2024);
+  const M=d.model,C=d.collisions,B=d.behaviors,S=d.similarity;
+  const zc=B.zoox_causes, zt=Object.values(zc).reduce((a,b)=>a+b,0);
+  document.getElementById('memo').innerHTML=`
+<h2>Bottom line</h2>
+<p>Miles per disengagement is useful only with an interval next to it and a check that the filing itself did not change. Cause labels from free text can be automated, but a classifier has to be judged on companies it has never seen, because a random split leaks boilerplate and overstates accuracy.</p>
+<h2>Fleet metric</h2>
+<p>Zoox drove ${k(Z[2025].miles)} autonomous miles in 2025 with ${Z[2025].disengagements} disengagements, ${k(Z[2025].mpd)} miles per disengagement (95% interval ${k(Z[2025].mpd_low)} to ${k(Z[2025].mpd_high)}). Its 2023 figure of ${k(Z[2023].mpd)} looks far better but rests on ${Z[2023].disengagements} events, and its interval runs from ${k(Z[2023].mpd_low)} to ${k(Z[2023].mpd_high)}. A dashboard that shows only the point value would invite the wrong conclusion.</p>
+<h2>Is a change real?</h2>
+<p>Waymo's disengagement rate rose ${wy.rate_ratio.toFixed(2)} times from 2023 to 2024 (exact test p < 0.001). Its cause sentences were the same as the year before, so this was not a change in reporting. The mix moved toward planning causes by ${Math.round(wd.biggest_shift_points*100)} points, which is where I would look first. By contrast, several other large shifts came with almost entirely new wording, which points to a change in how the company filed.</p>
+<h2>Cause labels and the classifier</h2>
+<p>Ten boilerplate sentences make up ${pct(d.labels.top10_sentences_share_of_events)} of all ${d.integrity.events.toLocaleString()} events, and ${pct(d.labels.event_share_mixed)} name more than one possible cause. A text classifier scored ${M.naive_random_split_macro_f1.toFixed(3)} macro F1 on a random split of events, but ${pct(M.naive_test_sentences_seen_in_training)} of those test sentences were already in training. Holding out whole companies gave ${M.held_out_company_macro_f1.toFixed(2)}, with map and localization the weakest class. A FAISS similarity search over sentence embeddings returns a neighbor with the same cause ${pct(S.precision_at_k)} of the time across companies, against ${pct(S.chance)} by chance, which is good enough to surface similar past events for an engineer to read.</p>
+<h2>Zoox's own disengagements</h2>
+<p>Of ${zt} Zoox disengagements, ${zc.Prediction||0} were described as prediction issues, ${zc.Planning||0} as planning and ${zc.Perception||0} as perception. ${pct(B.zoox_share['Pedestrian or cyclist'])} mention a pedestrian or cyclist, the most common situation, ahead of lane changes and turns.</p>
+<h2>Collisions</h2>
+<p>In ${C.by_mode.Autonomous} collisions in autonomous mode, ${pct(C.autonomous_rear_end_share)} were rear end crashes and the test vehicle was stopped or slowing in ${pct(C.autonomous_stopped_or_slowing_share)}. It was at fault in ${pct(C.autonomous_av_at_fault_share)}, against ${pct(C.conventional_av_at_fault_share)} when a person was driving. The difference in crash type is significant (chi-square p < 0.001, Cramér's V ${C.type.cramers_v.toFixed(2)}). The filings carry no mileage by mode, so this compares types of crash, not crash rates.</p>
+<h2>Next steps</h2>
+<p>Hand label a few hundred sentences to measure the rules' own error, add the DMV's driverless deployment data, and alert automatically when a company's new filing shifts its cause mix with mostly new wording.</p>`;
+});
+</script>
+</body>
+</html>
