@@ -1,0 +1,41 @@
+{
+  "checks": {
+    "rows": 3145725,
+    "vehicles": 4824,
+    "negative_speed": 0,
+    "speed_over_45_mps": 1,
+    "accel_over_8_mps2": 5311,
+    "duplicate_vehicle_frames": 0,
+    "vehicles_with_frame_gaps": 0,
+    "vehicles_cut_short": 3,
+    "rows_per_file_at_excel_limit": [
+      1048575,
+      1048575,
+      1048575
+    ]
+  },
+  "truncation": {
+    "0750_0805": {
+      "rows": 1048575,
+      "max_vehicle_id": 2783,
+      "missing_leader_ids": 14,
+      "rows_with_missing_leader": 3875,
+      "lowest_missing_id": 2795
+    },
+    "0805_0820": {
+      "rows": 1048575,
+      "max_vehicle_id": 1914,
+      "missing_leader_ids": 4,
+      "rows_with_missing_leader": 744,
+      "lowest_missing_id": 1918
+    },
+    "0820_0835": {
+      "rows": 1048575,
+      "max_vehicle_id": 1317,
+      "missing_leader_ids": 7,
+      "rows_with_missing_leader": 3734,
+      "lowest_missing_id": 1323
+    }
+  },
+  "excel_row_limit": 1048575
+}

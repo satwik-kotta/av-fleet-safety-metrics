@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Freeway Driving Memo</title>
+<style>
+:root{--bg:#f7f7f5;--card:#fff;--ink:#1d1d1f;--muted:#6b6b70;--line:#e4e4e0;--accent:#2f5bd3}
+@media (prefers-color-scheme:dark){:root{--bg:#141416;--card:#1d1d20;--ink:#ececec;--muted:#9b9ba1;--line:#2e2e33;--accent:#7b9cff}}
+body{margin:0;background:var(--bg);color:var(--ink);font:15.5px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif}
+article{max-width:760px;margin:0 auto;padding:32px 16px 60px}
+.paper{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:28px 30px}
+@media (max-width:600px){.paper{padding:20px 18px}}
+h1{font-size:22px;margin:0 0 4px}
+h2{font-size:15px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:24px 0 6px}
+.meta{color:var(--muted);font-size:13.5px;margin:0 0 18px}
+li{margin-bottom:6px}
+a{color:var(--accent)}
+</style>
+</head>
+<body>
+<article><div class="paper">
+<h1>Freeway driving behavior as congestion builds</h1>
+<p class="meta">Satwik Kotta · NGSIM US-101, Los Angeles, 7:50 to 8:35 on June 15, 2005 · <a href="freeway.html">Dashboard</a> · <a href="https://github.com/satwik-kotta/av-fleet-safety-metrics">Code</a></p>
+
+<h2>Question</h2>
+<p>When traffic slows, do safety critical events per km driven change, which lane changes carry the risk, and does a model that predicts lane changes hold up as conditions shift? These are the questions a validation team asks of any driving scenario set.</p>
+
+<h2>Findings</h2>
+<ul>
+<li><b>Near misses rose 2.8x per km as the freeway slowed.</b> Mean speed fell from 11.7 to 7.6 m/s across the three 15 minute periods. Near misses (time to collision under 1.5 s for at least 0.3 s) went from 191 to 531 per 1,000 vehicle km (exact conditional test, p &lt; 0.001). Hard braking rose 20% (p &lt; 0.001). Lane changes per km fell 12%, which is not significant (p = 0.07).</li>
+<li><b>One kind of lane change carries most of the risk.</b> A Gaussian mixture on 1,060 lane changes, with 4 clusters chosen by BIC, found a group of 5% that drift slowly across the line into a tight gap at speed. 78% of those left a time to collision under 2 s with the new leader, against 6% overall.</li>
+<li><b>Similar manoeuvre search finds risky cases.</b> For a risky lane change, 21% of its 10 nearest neighbours in a FAISS index of lateral motion were also risky, 3.4x the base rate. That is a way to pull more examples of a hard scenario out of a large log.</li>
+<li><b>The test split decides the score.</b> Predicting a lane change 3 s ahead, a random split of samples gave 0.63 average precision, but every test car was also in training. Holding out whole cars gave 0.50, against a 1.5% base rate.</li>
+<li><b>Drift was large but the model held.</b> Speed shifted with a PSI of 1.25 from the first period to the last. The model trained on the first period still scored 0.60 on the last, because it relies on where the car sits in its lane (31% of gain) and its sideways speed (16%), not on speed. Retraining with the middle period lifted it to 0.63.</li>
+</ul>
+
+<h2>Data quality</h2>
+<ul>
+<li>Every published file stops at exactly 1,048,575 rows, the Excel row limit, so the last vehicles in each period are missing. 3 vehicles cut mid trajectory were dropped, and 8,353 records whose leader is missing get no gap or time to collision rather than a wrong one.</li>
+<li>16% of raw lane switches were undone within 1 s, which is tracking jitter on the lane line, and 615 hard braking runs contained readings over 8 m/s², which is tracking noise. Both were removed before counting.</li>
+</ul>
+
+<h2>Limits</h2>
+<p>One 640 m stretch of one freeway on one morning in 2005, tracked from video, with human drivers. The near miss threshold is a common choice, not a standard, and the risky label uses only the new leader. The method carries over to fleet logs; the numbers do not.</p>
+</div></article>
+</body>
+</html>
